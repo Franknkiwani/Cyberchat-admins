@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Firebase Users - Modern Actions</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f2f2f2;
+      margin: 0;
+      padding: 20px;
+    }
+    h1 {
+      text-align: center;
+      color: #333;
+    }
+    .users-container {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 20px;
+      justify-content: center;
+      padding: 20px;
+    }
+    .user-card {
+      background: #fff;
+      border-radius: 8px;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+      padding: 20px;
+      width: 280px;
+      transition: transform 0.2s ease;
+    }
+    .user-card:hover {
+      transform: translateY(-5px);
+    }
+    .user-card img {
+      width: 100%;
+      height: auto;
+      border-radius: 4px;
+      margin-bottom: 15px;
+    }
+    .user-info {
+      color: #555;
+    }
+    .user-info h2 {
+      margin: 0 0 10px;
+      font-size: 1.4em;
+      color: #333;
+    }
+    .user-info p {
+      margin: 5px 0;
+      font-size: 0.95em;
+    }
+    .button-container {
+      margin-top: 15px;
+      display: flex;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 5px;
+    }
+    button {
+      padding: 8px 12px;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 0.9em;
+      flex: 1;
+    }
+    button.delete {
+      background-color: #e74c3c;
+      color: #fff;
+    }
+    button.edit {
+      background-color: #3498db;
+      color: #fff;
+    }
+    button.reset {
+      background-color: #f39c12;
+      color: #fff;
+    }
+    button:hover {
+      opacity: 0.9;
+    }
+    /* Common Modal Styles */
+    .modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0,0,0,0.6);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      visibility: hidden;
+      opacity: 0;
+      transition: opacity 0.3s ease, visibility 0.3s ease;
+    }
+    .modal-overlay.active {
+      visibility: visible;
+      opacity: 1;
+    }
+    .modal {
+      background: #fff;
+      border-radius: 8px;
+      padding: 30px;
+      max-width: 400px;
+      width: 90%;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.2);
+      text-align: center;
+    }
+    .modal h2 {
+      margin-top: 0;
+    }
+    .modal p {
+      font-size: 1em;
+      color: #555;
+    }
+    .modal input[type="password"],
+    .modal input[type="text"] {
+      width: 80%;
+      padding: 10px;
+      margin: 10px 0;
+      font-size: 1em;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+    }
+    .modal-buttons {
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+      margin-top: 15px;
+    }
+    .modal-buttons button {
+      flex: none;
+      padding: 8px 16px;
+      cursor: pointer;
+      border: none;
+      border-radius: 4px;
+    }
+    .modal-buttons button.confirm {
+      background-color: #27ae60;
+      color: #fff;
+    }
+    .modal-buttons button.cancel {
+      background-color: #c0392b;
+      color: #fff;
+    }
+  </style>
+</head>
+<body>
+  <h1>Firebase Users</h1>
+  <div id="users-container" class="users-container">
+    <!-- User cards will be appended here -->
+  </div>
+
+  <!-- Secure Delete Modal -->
+  <div id="delete-modal-overlay" class="modal-overlay">
+    <div class="modal">
+      <h2>Confirm Delete</h2>
+      <p>Please enter the secure deletion password:</p>
+      <input type="password" id="delete-password" placeholder="Enter password" />
+      <div class="modal-buttons">
+        <button class="confirm" onclick="handleSecureDelete()">Confirm</button>
+        <button class="cancel" onclick="hideDeleteModal()">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Reset Password Confirmation Modal -->
+  <div id="reset-modal-overlay" class="modal-overlay">
+    <div class="modal">
+      <h2>Reset Password Confirmation</h2>
+      <p id="reset-modal-message"></p>
+      <div class="modal-buttons">
+        <button class="confirm" onclick="handleResetConfirm()">Confirm</button>
+        <button class="cancel" onclick="hideResetModal()">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Edit User Modal -->
+  <div id="edit-modal-overlay" class="modal-overlay">
+    <div class="modal">
+      <h2>Edit User</h2>
+      <p>Modify the fields below then confirm with the admin password.</p>
+      <input type="text" id="edit-username" placeholder="Username" />
+      <input type="text" id="edit-email" placeholder="Email" />
+      <input type="text" id="edit-profileImage" placeholder="Profile Image URL" />
+      <input type="password" id="edit-admin-password" placeholder="Enter admin password" />
+      <div class="modal-buttons">
+        <button class="confirm" onclick="handleEditConfirm()">Confirm Edit</button>
+        <button class="cancel" onclick="hideEditModal()">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Firebase & Application Script -->
+  <script type="module">
+    // Import Firebase modules
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.2.0/firebase-app.js";
+    import { getAnalytics } from "https://www.gstatic.com/firebasejs/11.2.0/firebase-analytics.js";
+    import { getDatabase, ref, onValue, remove, update } from "https://www.gstatic.com/firebasejs/11.2.0/firebase-database.js";
+    import { getAuth, sendPasswordResetEmail } from "https://www.gstatic.com/firebasejs/11.2.0/firebase-auth.js";
+
+    // Firebase configuration
+    const firebaseConfig = {
+      apiKey: "AIzaSyDFHskUWiyHhZke3KT9kkOtFI_gPsKfiGo",
+      authDomain: "itzhoyoo-f9f7e.firebaseapp.com",
+      databaseURL: "https://itzhoyoo-f9f7e-default-rtdb.firebaseio.com",
+      projectId: "itzhoyoo-f9f7e",
+      storageBucket: "itzhoyoo-f9f7e.firebasestorage.app",
+      messagingSenderId: "1094792075584",
+      appId: "1:1094792075584:web:d49e9c3f899d3cd31082a5",
+      measurementId: "G-LLT6F9WRKH"
+    };
+
+    // Initialize Firebase
+    const app = initializeApp(firebaseConfig);
+    const analytics = getAnalytics(app);
+    const database = getDatabase(app);
+    const auth = getAuth(app);
+
+    // Global variables for pending actions
+    let pendingDeleteUserId = null;
+    let pendingResetEmail = null;
+    let pendingEditUserId = null;
+    let pendingEditData = {};
+
+    // Fetch users from Firebase and display them
+    function fetchUsers() {
+      const usersRef = ref(database, 'users');
+      onValue(usersRef, (snapshot) => {
+        const users = snapshot.val();
+        displayUsers(users);
+      });
+    }
+
+    // Delete user
+    function deleteUser(userId) {
+      const userRef = ref(database, 'users/' + userId);
+      remove(userRef)
+        .then(() => {
+          alert("User deleted successfully.");
+          hideDeleteModal();
+        })
+        .catch((error) => {
+          alert("Error deleting user: " + error.message);
+          hideDeleteModal();
+        });
+    }
+
+    // "Mock" reset password email sending
+    function resetPassword(email) {
+      alert("Mock: Password reset email sent to " + email);
+      hideResetModal();
+    }
+
+    // Update user data
+    function updateUser(userId, newData) {
+      const userRef = ref(database, 'users/' + userId);
+      update(userRef, newData)
+        .then(() => {
+          alert("User updated successfully.");
+          hideEditModal();
+        })
+        .catch((error) => {
+          alert("Error updating user: " + error.message);
+          hideEditModal();
+        });
+    }
+
+    // -------------------------
+    // DELETE MODAL FUNCTIONS
+    // -------------------------
+    function showDeleteModal(userId) {
+      pendingDeleteUserId = userId;
+      const modalOverlay = document.getElementById('delete-modal-overlay');
+      modalOverlay.classList.add('active');
+      document.getElementById('delete-password').value = '';
+    }
+    function hideDeleteModal() {
+      pendingDeleteUserId = null;
+      document.getElementById('delete-modal-overlay').classList.remove('active');
+    }
+    function handleSecureDelete() {
+      const inputPassword = document.getElementById('delete-password').value;
+      const correctPassword = "08042006"; // Secure deletion password
+      if (inputPassword === correctPassword) {
+        if (pendingDeleteUserId) {
+          deleteUser(pendingDeleteUserId);
+        }
+      } else {
+        alert("Incorrect password. Deletion aborted.");
+      }
+    }
+
+    // -------------------------
+    // RESET PASSWORD MODAL FUNCTIONS
+    // -------------------------
+    function showResetModal(email) {
+      pendingResetEmail = email;
+      const modalOverlay = document.getElementById('reset-modal-overlay');
+      document.getElementById('reset-modal-message').textContent =
+        `Are you sure you want to send a reset password email to ${email}?`;
+      modalOverlay.classList.add('active');
+    }
+    function hideResetModal() {
+      pendingResetEmail = null;
+      document.getElementById('reset-modal-overlay').classList.remove('active');
+    }
+    function handleResetConfirm() {
+      if (pendingResetEmail) {
+        resetPassword(pendingResetEmail);
+      }
+    }
+
+    // -------------------------
+    // EDIT MODAL FUNCTIONS
+    // -------------------------
+    function showEditModal(userId, userData) {
+      pendingEditUserId = userId;
+      pendingEditData = userData;
+      const modalOverlay = document.getElementById('edit-modal-overlay');
+      document.getElementById('edit-username').value = userData.username || "";
+      document.getElementById('edit-email').value = userData.email || "";
+      document.getElementById('edit-profileImage').value = userData.profileImage || "";
+      document.getElementById('edit-admin-password').value = "";
+      modalOverlay.classList.add('active');
+    }
+    function hideEditModal() {
+      pendingEditUserId = null;
+      pendingEditData = {};
+      document.getElementById('edit-modal-overlay').classList.remove('active');
+    }
+    function handleEditConfirm() {
+      const newUsername = document.getElementById('edit-username').value;
+      const newEmail = document.getElementById('edit-email').value;
+      const newProfileImage = document.getElementById('edit-profileImage').value;
+      const adminPassword = document.getElementById('edit-admin-password').value;
+      if (adminPassword !== "ITZHOYOO") {
+        alert("Incorrect admin password. Edit aborted.");
+        return;
+      }
+      const newData = {
+        username: newUsername,
+        email: newEmail,
+        profileImage: newProfileImage
+      };
+      if (pendingEditUserId) {
+        updateUser(pendingEditUserId, newData);
+      }
+    }
+
+    // -------------------------
+    // DISPLAY USERS
+    // -------------------------
+    function displayUsers(users) {
+      const usersContainer = document.getElementById('users-container');
+      usersContainer.innerHTML = '';
+      for (let userId in users) {
+        const user = users[userId];
+        const card = document.createElement('div');
+        card.className = 'user-card';
+
+        // Profile image
+        if (user.profileImage) {
+          const img = document.createElement('img');
+          img.src = user.profileImage;
+          img.alt = `${user.username}'s profile image`;
+          card.appendChild(img);
+        }
+
+        // User info
+        const infoDiv = document.createElement('div');
+        infoDiv.className = 'user-info';
+        const usernameHeading = document.createElement('h2');
+        usernameHeading.textContent = user.username;
+        infoDiv.appendChild(usernameHeading);
+        const emailPara = document.createElement('p');
+        emailPara.textContent = `Email: ${user.email}`;
+        infoDiv.appendChild(emailPara);
+        card.appendChild(infoDiv);
+
+        // Buttons container
+        const buttonContainer = document.createElement('div');
+        buttonContainer.className = 'button-container';
+
+        const deleteButton = document.createElement('button');
+        deleteButton.textContent = 'DELETE';
+        deleteButton.className = 'delete';
+        deleteButton.addEventListener('click', () => showDeleteModal(userId));
+
+        const editButton = document.createElement('button');
+        editButton.textContent = 'EDIT';
+        editButton.className = 'edit';
+        editButton.addEventListener('click', () => showEditModal(userId, user));
+
+        const resetButton = document.createElement('button');
+        resetButton.textContent = 'RESET PASSWORD';
+        resetButton.className = 'reset';
+        resetButton.addEventListener('click', () => showResetModal(user.email));
+
+        buttonContainer.appendChild(deleteButton);
+        buttonContainer.appendChild(editButton);
+        buttonContainer.appendChild(resetButton);
+        card.appendChild(buttonContainer);
+
+        usersContainer.appendChild(card);
+      }
+    }
+
+    // Fetch users on load
+    window.addEventListener('load', fetchUsers);
+
+    // Attach modal functions to window for inline onclick attributes
+    window.handleSecureDelete = handleSecureDelete;
+    window.hideDeleteModal = hideDeleteModal;
+    window.handleResetConfirm = handleResetConfirm;
+    window.hideResetModal = hideResetModal;
+    window.handleEditConfirm = handleEditConfirm;
+    window.hideEditModal = hideEditModal;
+  </script>
+</body>
+</html>
